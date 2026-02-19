@@ -109,6 +109,40 @@ toastBtn.addEventListener("click", () => toastOverlay.classList.remove("active")
 toastOverlay.addEventListener("click", (e) => { if (e.target === toastOverlay) toastOverlay.classList.remove("active"); });
 document.addEventListener("keydown", (e) => { if (e.key === "Escape") toastOverlay.classList.remove("active"); });
 
+// ---- Unit Toggle ----
+const unitToggle = document.getElementById("unitToggle");
+let selectedUnit = "celsius";
+
+unitToggle.addEventListener("click", (e) => {
+  const btn = e.target.closest(".unit-toggle__btn");
+  if (!btn) return;
+  unitToggle.querySelectorAll(".unit-toggle__btn").forEach(b => b.classList.remove("active"));
+  btn.classList.add("active");
+  selectedUnit = btn.dataset.unit;
+  renderHistory();
+});
+
+function formatTemp(kelvin, feelsLikeK) {
+  let temp, feels, suffix;
+  switch (selectedUnit) {
+    case "fahrenheit":
+      temp = ((kelvin - 273.15) * 9/5 + 32).toFixed(1);
+      feels = feelsLikeK != null ? ((feelsLikeK - 273.15) * 9/5 + 32).toFixed(1) : null;
+      suffix = "°F";
+      break;
+    case "kelvin":
+      temp = Number(kelvin).toFixed(1);
+      feels = feelsLikeK != null ? Number(feelsLikeK).toFixed(1) : null;
+      suffix = " K";
+      break;
+    default:
+      temp = (kelvin - 273.15).toFixed(1);
+      feels = feelsLikeK != null ? (feelsLikeK - 273.15).toFixed(1) : null;
+      suffix = "°C";
+  }
+  return { temp, feels, suffix };
+}
+
 // ---- History Array ----
 const history = [];
 
@@ -171,20 +205,24 @@ continueBtn.addEventListener("click", async () => {
     const icon        = data.weather[0].icon;
 
     // ---- Show Modal ----
+    const display = formatTemp(kelvin, data.main.feels_like);
     document.getElementById("modalTitle").textContent     = city;
     document.getElementById("conditionValue").textContent = description;
-    document.getElementById("tempValue").textContent      = `${celsius}°C`;
-    document.getElementById("feelsLike").textContent      = `Feels like ${(data.main.feels_like - 273.15).toFixed(1)}°C`;
+    document.getElementById("tempValue").textContent      = `${display.temp}${display.suffix}`;
+    document.getElementById("feelsLike").textContent      = `Feels like ${display.feels}${display.suffix}`;
     document.getElementById("humidityValue").textContent  = `${data.main.humidity}%`;
     document.getElementById("windValue").textContent      = `${data.wind.speed} km/h`;
     document.getElementById("pressureValue").textContent  = `${data.main.pressure} hPa`;
     document.getElementById("visibilityValue").textContent= `${(data.visibility/1000).toFixed(1)} km`;
     document.getElementById("cloudsValue").textContent    = `${data.clouds.all}%`;
 
-    // Theme based on description
+    // Theme based on description + day/night
     const hero = document.getElementById("tempHero");
     hero.className = "temp-hero"; // reset
-    if (description.includes("clear")) hero.classList.add("theme-clear");
+    const isNight = icon && icon.endsWith("n");
+    if (isNight) {
+      hero.classList.add("theme-night");
+    } else if (description.includes("clear")) hero.classList.add("theme-clear");
     else if (description.includes("cloud")) hero.classList.add("theme-clouds");
     else if (description.includes("rain")) hero.classList.add("theme-rain");
     else if (description.includes("storm")) hero.classList.add("theme-storm");
@@ -205,6 +243,7 @@ continueBtn.addEventListener("click", async () => {
       description,
       icon,
       weatherMain: data.weather[0].main,
+      feelsLikeK: data.main.feels_like,
       feelsLike: (data.main.feels_like - 273.15).toFixed(1),
       humidity: data.main.humidity,
       wind: data.wind.speed,
@@ -226,7 +265,9 @@ modal.addEventListener("click", e => { if (e.target === modal) modal.classList.r
 document.addEventListener("keydown", e => { if (e.key === "Escape") modal.classList.remove("active"); });
 
 // ---- Render History as Mini-Modal Cards ----
-function getThemeClass(description) {
+function getThemeClass(description, iconCode) {
+  const isNight = iconCode && iconCode.endsWith("n");
+  if (isNight) return "theme-night";
   if (description.includes("clear")) return "theme-clear";
   if (description.includes("cloud")) return "theme-clouds";
   if (description.includes("rain")) return "theme-rain";
@@ -240,7 +281,7 @@ function renderHistory() {
   historyList.innerHTML = "";
   // Show newest first
   [...history].reverse().forEach(entry => {
-    const themeClass = getThemeClass(entry.description);
+    const themeClass = getThemeClass(entry.description, entry.icon);
     const isNight = entry.icon && entry.icon.endsWith("n");
     let animUrl;
     if (isNight && entry.weatherMain === "Clear") {
@@ -249,6 +290,7 @@ function renderHistory() {
       animUrl = weatherAnimations[entry.weatherMain] || defaultAnimation;
     }
 
+    const d = formatTemp(entry.kelvin, entry.feelsLikeK);
     const card = document.createElement("div");
     card.className = "history-card";
     card.innerHTML = `
@@ -256,8 +298,8 @@ function renderHistory() {
         <div class="history-card__info">
           <p class="history-card__city">${entry.city}</p>
           <p class="history-card__condition">${entry.description}</p>
-          <h3 class="history-card__temp">${entry.celsius}°C</h3>
-          <p class="history-card__feels">Feels like ${entry.feelsLike}°C</p>
+          <h3 class="history-card__temp">${d.temp}${d.suffix}</h3>
+          <p class="history-card__feels">Feels like ${d.feels}${d.suffix}</p>
         </div>
         <div class="history-card__lottie">
           <dotlottie-wc src="${animUrl}" style="width:60px;height:60px" autoplay loop></dotlottie-wc>
@@ -346,6 +388,7 @@ btnCompare.addEventListener("click", () => {
     },
     options: {
       responsive: true,
+      maintainAspectRatio: false,
       plugins: {
         legend: { display: false },
         title: {
