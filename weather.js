@@ -38,6 +38,53 @@ const stateCityMap = {
       "Puducherry": ["Puducherry", "Karaikal", "Mahe", "Yanam", "Oulgaret", "Villianur", "Bahour", "Nettapakkam", "Ariyankuppam", "Muthialpet"]
     };
 
+// ---- Lottie Weather Animation Map ----
+// Maps OpenWeatherMap "main" condition + icon to matching Lottie animations (by jochang)
+const weatherAnimations = {
+  Clear:        "https://assets-v2.lottiefiles.com/a/5855a50a-1151-11ee-8713-db7d99d1cba7/0K62KcjosX.lottie",
+  Clouds:       "https://assets-v2.lottiefiles.com/a/584a51a0-1151-11ee-870f-73f0e4a25c18/OiRsquuDDf.lottie",
+  Rain:         "https://assets-v2.lottiefiles.com/a/58526552-1151-11ee-8710-7f5bc355e2bb/JIYnBacuWm.lottie",
+  Drizzle:      "https://assets-v2.lottiefiles.com/a/58526552-1151-11ee-8710-7f5bc355e2bb/JIYnBacuWm.lottie",
+  Thunderstorm: "https://assets-v2.lottiefiles.com/a/5854ce64-1151-11ee-8712-37a400a8de07/SWzmb7n620.lottie",
+  Snow:         "https://assets-v2.lottiefiles.com/a/5837c3dc-1151-11ee-8709-1bfa94b3ca50/1JbNUYBlfw.lottie",
+  Mist:         "https://assets-v2.lottiefiles.com/a/5838a158-1151-11ee-870a-5f500d146f4c/guXfjv7EdD.lottie",
+  Smoke:        "https://assets-v2.lottiefiles.com/a/5838a158-1151-11ee-870a-5f500d146f4c/guXfjv7EdD.lottie",
+  Haze:         "https://assets-v2.lottiefiles.com/a/5838a158-1151-11ee-870a-5f500d146f4c/guXfjv7EdD.lottie",
+  Dust:         "https://assets-v2.lottiefiles.com/a/585746e4-1151-11ee-8715-af7e35ba4dbd/ZEEyrTjEOU.lottie",
+  Fog:          "https://assets-v2.lottiefiles.com/a/5838a158-1151-11ee-870a-5f500d146f4c/guXfjv7EdD.lottie",
+  Sand:         "https://assets-v2.lottiefiles.com/a/585746e4-1151-11ee-8715-af7e35ba4dbd/ZEEyrTjEOU.lottie",
+  Ash:          "https://assets-v2.lottiefiles.com/a/5838a158-1151-11ee-870a-5f500d146f4c/guXfjv7EdD.lottie",
+  Squall:       "https://assets-v2.lottiefiles.com/a/585746e4-1151-11ee-8715-af7e35ba4dbd/ZEEyrTjEOU.lottie",
+  Tornado:      "https://assets-v2.lottiefiles.com/a/5854ce64-1151-11ee-8712-37a400a8de07/SWzmb7n620.lottie",
+  Night:        "https://assets-v2.lottiefiles.com/a/584838ca-1151-11ee-870e-2b08e98fd879/NLTBfths9o.lottie",
+};
+
+const defaultAnimation = "https://assets-v2.lottiefiles.com/a/584a51a0-1151-11ee-870f-73f0e4a25c18/OiRsquuDDf.lottie";
+
+/**
+ * Updates the Lottie animation based on weather condition.
+ * Uses the "main" field from OpenWeatherMap and the icon code (d/n suffix for day/night).
+ */
+function updateWeatherAnimation(weatherMain, iconCode) {
+  const lottieEl = document.getElementById("weatherLottie");
+  if (!lottieEl) return;
+
+  // Check if it's nighttime (icon ends with 'n') and weather is Clear
+  const isNight = iconCode && iconCode.endsWith("n");
+  let animUrl;
+
+  if (isNight && weatherMain === "Clear") {
+    animUrl = weatherAnimations.Night;
+  } else {
+    animUrl = weatherAnimations[weatherMain] || defaultAnimation;
+  }
+
+  // Only update if src actually changed to avoid re-triggering
+  if (lottieEl.getAttribute("src") !== animUrl) {
+    lottieEl.setAttribute("src", animUrl);
+  }
+}
+
 // ---- DOM References ----
 const stateSelect   = document.getElementById("state");
 const citySelect    = document.getElementById("city");
@@ -45,6 +92,22 @@ const continueBtn   = document.querySelector(".btn-continue");
 const modal         = document.getElementById("weatherModal");
 const modalClose    = document.getElementById("modalClose");
 const historyList   = document.getElementById("historyList");
+
+// ---- Toast Popup ----
+const toastOverlay = document.getElementById("toastOverlay");
+const toastMsg     = document.getElementById("toastMsg");
+const toastIcon    = document.getElementById("toastIcon");
+const toastBtn     = document.getElementById("toastBtn");
+
+function showToast(message, icon = "⚠️") {
+  toastIcon.textContent = icon;
+  toastMsg.textContent  = message;
+  toastOverlay.classList.add("active");
+}
+
+toastBtn.addEventListener("click", () => toastOverlay.classList.remove("active"));
+toastOverlay.addEventListener("click", (e) => { if (e.target === toastOverlay) toastOverlay.classList.remove("active"); });
+document.addEventListener("keydown", (e) => { if (e.key === "Escape") toastOverlay.classList.remove("active"); });
 
 // ---- History Array ----
 const history = [];
@@ -77,9 +140,14 @@ stateSelect.addEventListener("change", () => {
 
 // ---- Weather Fetch ----
 continueBtn.addEventListener("click", async () => {
+  const state = stateSelect.value;
   const city = citySelect.value;
+  if (!state) {
+    showToast("Please select a state first.", "📍");
+    return;
+  }
   if (!city) {
-    alert("Please select a city!");
+    showToast("Please select a city to continue.", "🏙️");
     return;
   }
 
@@ -89,6 +157,12 @@ continueBtn.addEventListener("click", async () => {
   try {
     const response = await fetch(url);
     const data = await response.json();
+
+    // ---- Validate API response ----
+    if (data.cod !== 200) {
+      showToast(data.message || "Could not fetch weather data.", "❌");
+      return;
+    }
 
     const kelvin      = data.main.temp;
     const celsius     = (kelvin - 273.15).toFixed(1);
@@ -115,20 +189,34 @@ continueBtn.addEventListener("click", async () => {
     else if (description.includes("rain")) hero.classList.add("theme-rain");
     else if (description.includes("storm")) hero.classList.add("theme-storm");
     else if (description.includes("snow")) hero.classList.add("theme-snow");
-    else if (description.includes("mist")) hero.classList.add("theme-mist");
+    else if (description.includes("mist") || description.includes("haze") || description.includes("fog")) hero.classList.add("theme-mist");
 
-    document.getElementById("weatherIcon").src = `https://openweathermap.org/img/wn/${icon}@2x.png`;
+    // ---- Update Lottie animation dynamically ----
+    updateWeatherAnimation(data.weather[0].main, icon);
 
     modal.classList.add("active");
 
     // ---- Save to History ----
-    history.push({ city, kelvin, celsius, fahrenheit, description, icon });
+    history.push({
+      city,
+      kelvin,
+      celsius,
+      fahrenheit,
+      description,
+      icon,
+      weatherMain: data.weather[0].main,
+      feelsLike: (data.main.feels_like - 273.15).toFixed(1),
+      humidity: data.main.humidity,
+      wind: data.wind.speed,
+      pressure: data.main.pressure,
+      visibility: (data.visibility / 1000).toFixed(1),
+      clouds: data.clouds.all
+    });
     renderHistory();
-    updateChart();
 
   } catch (err) {
     console.error("Weather fetch error:", err);
-    alert("Could not fetch weather data.");
+    showToast("Could not fetch weather data. Please check your internet connection.", "🌐");
   }
 });
 
@@ -137,20 +225,56 @@ modalClose.addEventListener("click", () => modal.classList.remove("active"));
 modal.addEventListener("click", e => { if (e.target === modal) modal.classList.remove("active"); });
 document.addEventListener("keydown", e => { if (e.key === "Escape") modal.classList.remove("active"); });
 
-// ---- Render History ----
+// ---- Render History as Mini-Modal Cards ----
+function getThemeClass(description) {
+  if (description.includes("clear")) return "theme-clear";
+  if (description.includes("cloud")) return "theme-clouds";
+  if (description.includes("rain")) return "theme-rain";
+  if (description.includes("storm")) return "theme-storm";
+  if (description.includes("snow")) return "theme-snow";
+  if (description.includes("mist") || description.includes("haze") || description.includes("fog")) return "theme-mist";
+  return "";
+}
+
 function renderHistory() {
   historyList.innerHTML = "";
-  history.forEach(entry => {
+  // Show newest first
+  [...history].reverse().forEach(entry => {
+    const themeClass = getThemeClass(entry.description);
+    const isNight = entry.icon && entry.icon.endsWith("n");
+    let animUrl;
+    if (isNight && entry.weatherMain === "Clear") {
+      animUrl = weatherAnimations.Night;
+    } else {
+      animUrl = weatherAnimations[entry.weatherMain] || defaultAnimation;
+    }
+
     const card = document.createElement("div");
     card.className = "history-card";
     card.innerHTML = `
-      <div class="history-card__inner">
-        <img src="https://openweathermap.org/img/wn/${entry.icon}@2x.png" 
-             alt="Weather icon" class="history-icon">
-        <div class="history-info">
-          <h4 class="history-city">${entry.city}</h4>
-          <p class="history-condition">${entry.description}</p>
-          <p class="history-temp">${entry.celsius}°C | ${entry.fahrenheit}°F | ${entry.kelvin}K</p>
+      <div class="history-card__hero ${themeClass}">
+        <div class="history-card__info">
+          <p class="history-card__city">${entry.city}</p>
+          <p class="history-card__condition">${entry.description}</p>
+          <h3 class="history-card__temp">${entry.celsius}°C</h3>
+          <p class="history-card__feels">Feels like ${entry.feelsLike}°C</p>
+        </div>
+        <div class="history-card__lottie">
+          <dotlottie-wc src="${animUrl}" style="width:60px;height:60px" autoplay loop></dotlottie-wc>
+        </div>
+      </div>
+      <div class="history-card__stats">
+        <div class="history-card__stat">
+          <span class="history-card__stat-val">${entry.humidity}%</span>
+          <span class="history-card__stat-lbl">Humidity</span>
+        </div>
+        <div class="history-card__stat">
+          <span class="history-card__stat-val">${entry.wind} km/h</span>
+          <span class="history-card__stat-lbl">Wind</span>
+        </div>
+        <div class="history-card__stat">
+          <span class="history-card__stat-val">${entry.clouds}%</span>
+          <span class="history-card__stat-lbl">Clouds</span>
         </div>
       </div>
     `;
@@ -158,50 +282,92 @@ function renderHistory() {
   });
 }
 
-// ---- Chart.js ----
-let myChart;
-function updateChart() {
-  const ctx = document.getElementById("myChart");
-  if (!ctx) return; // safeguard
+// ---- Line Chart (recent searches comparison) ----
+const chartUnit  = document.getElementById("chartUnit");
+const btnCompare = document.getElementById("btnCompare");
 
-  const labels = history.map(h => h.city);
-  const dataC  = history.map(h => h.celsius);
-  const dataF  = history.map(h => h.fahrenheit);
-  const dataK  = history.map(h => h.kelvin);
+let lineChart;
+btnCompare.addEventListener("click", () => {
+  const unit = chartUnit.value;
 
-  if (myChart) myChart.destroy();
+  if (history.length === 0) {
+    showToast("Search for some cities first to see the chart.", "📊");
+    return;
+  }
 
-  myChart = new Chart(ctx, {
-    type: "bar",
+  // Deduplicate: keep only the first occurrence of each city
+  const cityMap = new Map();
+  history.forEach(h => {
+    if (!cityMap.has(h.city)) cityMap.set(h.city, h);
+  });
+  const unique = Array.from(cityMap.values());
+
+  // Unit config
+  let unitSuffix, getValue;
+  switch (unit) {
+    case "fahrenheit":
+      unitSuffix = "°F";
+      getValue = h => Number.parseFloat(h.fahrenheit);
+      break;
+    case "kelvin":
+      unitSuffix = "K";
+      getValue = h => Number.parseFloat(h.kelvin);
+      break;
+    default:
+      unitSuffix = "°C";
+      getValue = h => Number.parseFloat(h.celsius);
+  }
+
+  const labels = unique.map(h => h.city);
+  const values = unique.map(getValue);
+
+  const ctx = document.getElementById("lineChart");
+  if (!ctx) return;
+
+  if (lineChart) lineChart.destroy();
+  lineChart = new Chart(ctx, {
+    type: "line",
     data: {
       labels,
-      datasets: [
-        {
-          label: "Celsius (°C)",
-          data: dataC,
-          backgroundColor: "rgba(54, 162, 235, 0.6)"
-        },
-        {
-          label: "Fahrenheit (°F)",
-          data: dataF,
-          backgroundColor: "rgba(255, 99, 132, 0.6)"
-        },
-        {
-          label: "Kelvin (K)",
-          data: dataK,
-          backgroundColor: "rgba(255, 206, 86, 0.6)"
-        }
-      ]
+      datasets: [{
+        label: `Temperature (${unitSuffix})`,
+        data: values,
+        borderColor: "#2563EB",
+        backgroundColor: "rgba(37, 99, 235, 0.08)",
+        borderWidth: 2.5,
+        pointBackgroundColor: "#2563EB",
+        pointBorderColor: "#fff",
+        pointBorderWidth: 2,
+        pointRadius: 6,
+        pointHoverRadius: 8,
+        tension: 0.35,
+        fill: true
+      }]
     },
     options: {
       responsive: true,
       plugins: {
-        legend: { position: "top" },
-        title: { display: true, text: "Temperature Comparison" }
+        legend: { display: false },
+        title: {
+          display: true,
+          text: `Recent Searches — Temperature (${unitSuffix})`,
+          font: { size: 14, weight: "bold" }
+        },
+        tooltip: {
+          callbacks: {
+            label: (tip) => `${tip.parsed.y} ${unitSuffix}`
+          }
+        }
       },
       scales: {
-        y: { beginAtZero: true }
+        y: {
+          beginAtZero: false,
+          title: { display: true, text: unitSuffix }
+        },
+        x: {
+          title: { display: true, text: "City" }
+        }
       }
     }
   });
-}
+});
